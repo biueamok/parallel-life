@@ -15,22 +15,24 @@ from mock_data import (
 from narratives import get_narrative, get_punchline, YEAR_EMOJIS, YEAR_LABELS
 
 # ============================================================
-# LLM 升级开关（Demo 默认关闭，使用模板 fallback）
+# LLM 升级开关（动态：有 API Key 时自动启用 DeepSeek）
 # ============================================================
-USE_LLM = False
+try:
+    from llm_client import (
+        is_available as _llm_available,
+        generate_timeline_narrative as _llm_narrative,
+        generate_punchline as _llm_punchline,
+    )
+    LLM_CLIENT_LOADED = True
+except Exception:
+    LLM_CLIENT_LOADED = False
+    def _llm_available() -> bool:
+        return False
 
-def call_llm(prompt: str, fallback: str) -> str:
-    """
-    LLM 调用桩函数。USE_LLM=False 时直接返回 fallback。
-    升级路径：接入 OpenAI/Claude/文心一言时在此处填充真实调用。
-    """
-    if not USE_LLM:
-        return fallback
-    # TODO: 真实 LLM 调用
-    # import openai
-    # resp = openai.ChatCompletion.create(model="gpt-4", messages=[{"role":"user","content":prompt}])
-    # return resp.choices[0].message.content
-    return fallback
+
+def USE_LLM() -> bool:  # 保留旧命名，改为函数避免启动时固化
+    """运行时判断：有 Key 且模块加载成功时启用"""
+    return LLM_CLIENT_LOADED and _llm_available()
 
 
 # ============================================================
@@ -349,7 +351,8 @@ def generate_parallel_narratives(options: List[Dict], sim_results: Dict[str, Dic
         timeline = []
         for y in years:
             income = sim[y]["income"]["p50"]
-            text = get_narrative(
+            happiness = sim[y]["happiness"]["p50"]
+            fallback_text = get_narrative(
                 option_id=opt_id,
                 value_dim=dom_value,
                 outcome=outcome,
@@ -358,14 +361,25 @@ def generate_parallel_narratives(options: List[Dict], sim_results: Dict[str, Dic
                 income=income,
                 age=age,
             )
-            # LLM 升级路径：如果 USE_LLM=True，这里会调用真实 LLM
-            llm_prompt = (
-                f"用户画像：{user_context}\n"
-                f"选项：{opt['name']}\n模拟结果：{sim[y]}\n"
-                f"请用第二人称写一段{y}年后的人生场景，{len(text)}字左右，"
-                f"语言风格具象、有画面感、有情绪张力，避免鸡汤。"
-            )
-            text = call_llm(llm_prompt, fallback=text)
+
+            # 有 LLM Key 时调用真实 DeepSeek，失败自动回退模板
+            if USE_LLM():
+                text = _llm_narrative(
+                    option_name=opt["name"],
+                    option_emoji=opt["emoji"],
+                    year=y,
+                    age=age,
+                    income=income,
+                    happiness=happiness,
+                    outcome=outcome,
+                    dominant_value=VALUE_DIMENSIONS.get(dom_value, {}).get("name", dom_value),
+                    user_raw_text=user_context.get("raw_text", ""),
+                    user_value_keyword=user_tokens.get("user_value_keyword", ""),
+                    user_concern_keyword=user_tokens.get("user_raw_concern", ""),
+                    fallback_text=fallback_text,
+                )
+            else:
+                text = fallback_text
 
             timeline.append({
                 "year": y,
@@ -373,8 +387,21 @@ def generate_parallel_narratives(options: List[Dict], sim_results: Dict[str, Dic
                 "emoji": YEAR_EMOJIS[y],
                 "text": text,
                 "income_p50": income,
-                "happiness_p50": sim[y]["happiness"]["p50"],
+                "happiness_p50": happiness,
             })
+
+        # 扎心总结：LLM 或模板
+        template_punch = get_punchline(opt_id, outcome, user_tokens)
+        if USE_LLM():
+            punchline = _llm_punchline(
+                option_name=opt["name"],
+                outcome=outcome,
+                user_raw_text=user_context.get("raw_text", ""),
+                user_value_keyword=user_tokens.get("user_value_keyword", ""),
+                fallback_text=template_punch,
+            )
+        else:
+            punchline = template_punch
 
         narratives[opt_id] = {
             "option_name": opt["name"],
@@ -382,7 +409,7 @@ def generate_parallel_narratives(options: List[Dict], sim_results: Dict[str, Dic
             "color": opt["color"],
             "outcome": outcome,
             "timeline": timeline,
-            "punchline": get_punchline(opt_id, outcome, user_tokens),
+            "punchline": punchline,
         }
     return narratives
 

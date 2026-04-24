@@ -477,5 +477,249 @@ p, li, label, span, div {
 }
 .highlight-blue { color: #38BDF8; font-weight: 700; }
 .highlight-orange { color: #FB923C; font-weight: 700; }
+
+/* ============================================================
+   📱 移动端响应式适配（核心新增）
+   ============================================================ */
+@media (max-width: 768px) {
+    /* 主容器：收窄内边距 */
+    .main .block-container {
+        padding: 0.6rem 0.7rem 2rem !important;
+        max-width: 100% !important;
+    }
+
+    /* 标题：降字号，避免溢出 */
+    h1 { font-size: 1.7rem !important; line-height: 1.25 !important; }
+    h2 { font-size: 1.25rem !important; }
+    h3 { font-size: 1.05rem !important; }
+
+    /* Hero 区 */
+    .hero-container {
+        padding: 1.2rem 0.6rem 0.8rem !important;
+    }
+    .hero-subtitle { font-size: 0.95rem !important; }
+    .hero-tagline { font-size: 0.65rem !important; letter-spacing: 0.08em !important; }
+
+    /* 卡片：降低内边距 + 降低 min-height */
+    .life-card {
+        padding: 14px 13px !important;
+        margin: 8px 0 !important;
+        border-radius: 12px !important;
+    }
+
+    /* 场景卡网格：让三列场景卡强制堆叠（通过 columns 子元素） */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
+    /* 价值观 PK 卡片 */
+    .vs-card {
+        padding: 18px 14px !important;
+        min-height: 110px !important;
+    }
+    .vs-card-emoji { font-size: 2rem !important; }
+    .vs-card-title { font-size: 1.05rem !important; }
+    .vs-card-desc { font-size: 0.8rem !important; }
+    .vs-divider {
+        font-size: 1rem !important;
+        padding: 10px 0 !important;
+        letter-spacing: 0.15em !important;
+    }
+
+    /* 按钮：全宽、更大点击区 */
+    .stButton > button,
+    .stDownloadButton > button {
+        width: 100% !important;
+        padding: 14px 16px !important;
+        font-size: 0.95rem !important;
+        letter-spacing: 0 !important;
+    }
+
+    /* 时间线卡片：降低行距 */
+    .timeline-card {
+        padding: 13px 14px !important;
+        margin: 8px 0 !important;
+    }
+    .narrative-text {
+        font-size: 14px !important;
+        line-height: 1.8 !important;
+    }
+
+    /* 扎心总结 */
+    .punchline {
+        padding: 14px 16px !important;
+        font-size: 13.5px !important;
+        line-height: 1.7 !important;
+    }
+    .punchline-disclaimer { font-size: 10.5px !important; }
+
+    /* 偏差弹窗 */
+    .bias-alert {
+        padding: 13px 14px !important;
+    }
+    .bias-title { font-size: 0.98rem !important; }
+    .bias-evidence { font-size: 12px !important; }
+
+    /* 时间折现面板 */
+    .discount-panel { padding: 14px !important; }
+    .discount-numbers {
+        flex-direction: column !important;
+        gap: 10px !important;
+    }
+    .discount-arrow { transform: rotate(90deg); }
+    .discount-num-big { font-size: 1.3rem !important; }
+    .discount-num-small { font-size: 1.1rem !important; }
+
+    /* 步骤指示器 */
+    .step-dot { width: 28px !important; }
+
+    /* 免责 Banner */
+    .disclaimer-banner {
+        font-size: 0.72rem !important;
+        padding: 8px 12px !important;
+    }
+
+    /* Option header */
+    .option-header-stable,
+    .option-header-adventure {
+        padding: 12px 14px !important;
+    }
+    .option-title { font-size: 1.1rem !important; }
+    .option-subtitle { font-size: 0.78rem !important; }
+
+    /* 输入框：更易点击 */
+    .stTextInput > div > div > input,
+    .stTextArea textarea,
+    [data-testid="stNumberInput"] input {
+        font-size: 16px !important;  /* iOS 16px 不触发缩放 */
+        padding: 12px 12px !important;
+    }
+
+    /* Sidebar：移动端折叠更彻底 */
+    [data-testid="stSidebar"] {
+        min-width: 0 !important;
+    }
+
+    /* Plotly 图表容器：限制高度 */
+    .js-plotly-plot {
+        font-size: 11px !important;
+    }
+
+    /* 多选/下拉 */
+    .stMultiSelect [data-baseweb="select"] {
+        font-size: 14px !important;
+    }
+}
+
+/* 超小屏幕（< 480px） */
+@media (max-width: 480px) {
+    h1 { font-size: 1.5rem !important; }
+    .hero-container { padding: 1rem 0.4rem 0.6rem !important; }
+    .narrative-text { font-size: 13.5px !important; }
+    .vs-card-title { font-size: 1rem !important; }
+    .life-card { padding: 12px 11px !important; }
+}
+
+/* ============================================================
+   💎 Landing 引导组件（新增，配合友好化改造）
+   ============================================================ */
+.guide-strip {
+    background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(236,72,153,0.08));
+    border-left: 3px solid #A78BFA;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 14px 0;
+    color: #E2E8F0;
+    font-family: 'Noto Serif SC', serif;
+    line-height: 1.8;
+    font-size: 14.5px;
+}
+.guide-strip b { color: #FCD34D; }
+
+.example-chip {
+    display: inline-block;
+    background: rgba(99,102,241,0.18);
+    border: 1px solid rgba(165,180,252,0.45);
+    border-radius: 18px;
+    padding: 7px 14px;
+    margin: 4px 4px 4px 0;
+    font-size: 0.82rem;
+    color: #E0E7FF;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.example-chip:hover {
+    background: rgba(99,102,241,0.32);
+    transform: translateY(-1px);
+}
+
+.kpi-row {
+    display: flex;
+    gap: 10px;
+    margin: 14px 0;
+    flex-wrap: wrap;
+}
+.kpi-chip {
+    background: rgba(30,41,59,0.7);
+    border: 1px solid rgba(148,163,184,0.2);
+    border-radius: 10px;
+    padding: 10px 14px;
+    min-width: 100px;
+    flex: 1;
+}
+.kpi-label {
+    font-size: 0.7rem;
+    color: #94A3B8;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.kpi-value {
+    font-size: 1.15rem;
+    color: #F8FAFC;
+    font-weight: 700;
+    margin-top: 3px;
+}
+
+/* LLM 开关徽标 */
+.llm-badge-on {
+    display: inline-block;
+    background: linear-gradient(135deg, #10B981, #059669);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(16,185,129,0.3);
+}
+.llm-badge-off {
+    display: inline-block;
+    background: rgba(148,163,184,0.25);
+    color: #CBD5E1;
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+}
+
+/* 读图引导 */
+.reading-guide {
+    background: rgba(6,78,59,0.22);
+    border: 1px solid rgba(52,211,153,0.4);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin: 10px 0 18px;
+    font-size: 13.5px;
+    color: #A7F3D0;
+    line-height: 1.7;
+    font-family: 'Noto Serif SC', serif;
+}
+.reading-guide b { color: #FEF3C7; }
 </style>
 """

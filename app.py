@@ -9,19 +9,28 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 import io
+import html
 
 from styles import CUSTOM_CSS
 from mock_data import (
     VALUE_DIMENSIONS, VALUE_PK_PAIRS, SCENARIOS,
     DEFAULT_SEED_CONTEXT, SCENARIO_CATALOG,
+    EXAMPLE_CASES, FRIENDLY_COPY,
 )
 from core import (
     model_options, quantify_values, solve_constraints,
     monte_carlo_simulate, time_discount, detect_biases,
     generate_parallel_narratives, get_dominant_value,
-    run_full_pipeline, USE_LLM,
+    run_full_pipeline, USE_LLM, LLM_CLIENT_LOADED,
 )
 from narratives import YEAR_EMOJIS, YEAR_LABELS
+
+# LLM 客户端（可选加载）
+try:
+    from llm_client import is_available as llm_is_available, ping as llm_ping
+except Exception:
+    def llm_is_available(): return False
+    def llm_ping(api_key=None): return {"ok": False, "error": "llm_client 未加载"}
 
 # ============================================================
 # 页面配置
@@ -45,6 +54,10 @@ if "pk_index" not in st.session_state:
     st.session_state.pk_index = 0
 if "pipeline_result" not in st.session_state:
     st.session_state.pipeline_result = None
+if "deepseek_api_key" not in st.session_state:
+    st.session_state.deepseek_api_key = ""
+if "example_applied" not in st.session_state:
+    st.session_state.example_applied = None
 
 
 # ============================================================
@@ -63,42 +76,83 @@ def go_to_step(n: int):
     st.rerun()
 
 
+def apply_example(example_idx: int):
+    """将示例情境写入 session_state"""
+    ex = EXAMPLE_CASES[example_idx]
+    st.session_state.user_context.update({
+        "raw_text": ex["text"],
+        "age": ex["age"],
+        "savings_wan": ex["savings"],
+        "user_estimated_success": ex["success"],
+        "hard_constraints": ex["constraints"],
+    })
+    st.session_state.example_applied = example_idx
+
+
 # ============================================================
 # 页面 1：Landing + 决策输入
 # ============================================================
 def page_1_landing():
     render_step_indicator(1)
+
     # Hero
     st.markdown(
-        """
+        f"""
         <div class="hero-container">
             <h1>平行人生</h1>
-            <div class="hero-subtitle">在一个决定之前，先活一遍未来</div>
-            <div class="hero-tagline">LIFE DECISION OS · POWERED BY MONTE CARLO × BEHAVIORAL ECONOMICS</div>
+            <div class="hero-subtitle">{FRIENDLY_COPY['hero_tagline_zh']}</div>
+            <div class="hero-tagline">LIFE DECISION OS · MONTE CARLO × BEHAVIORAL ECONOMICS</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    # 一分钟说明书
+    st.markdown("#### ✨ 30 秒看懂这个产品")
+    steps_html = "".join(
+        f"""
+        <div class="life-card" style="margin:6px 0;padding:14px 18px;border-left:3px solid #6366F1;">
+            <div style="display:flex;align-items:center;gap:14px;">
+                <div style="font-size:2rem;">{emoji}</div>
+                <div style="flex:1;">
+                    <div style="color:#A5B4FC;font-weight:700;font-size:0.85rem;">
+                        {step} · <span style="color:#FCD34D;">约 {dur}</span>
+                    </div>
+                    <div style="color:#E2E8F0;font-family:'Noto Serif SC',serif;margin-top:2px;font-size:14px;">
+                        {desc}
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+        for (emoji, step, dur, desc) in FRIENDLY_COPY["one_min_explainer"]
+    )
+    st.markdown(steps_html, unsafe_allow_html=True)
+
+    # 为什么值得信任
+    with st.expander("🧭 这个产品靠什么给出结论？（点击展开）", expanded=False):
+        for line in FRIENDLY_COPY["why_it_works"]:
+            st.markdown(f"- {line}")
+
     # 免责 Banner
     st.markdown(
-        '<div class="disclaimer-banner">🔒 本系统基于蒙特卡洛模拟与行为经济学模型，输出为概率分布而非预言；不存储任何用户输入</div>',
+        '<div class="disclaimer-banner">🔒 本系统输出为概率分布而非预言；不存储、不训练、不传递你的任何输入</div>',
         unsafe_allow_html=True,
     )
 
-    # 场景选择（仅职业转型可用，其他占位）
-    st.markdown("#### 🎯 选择一个你正在面对的人生决策")
+    # 场景选择
+    st.markdown("#### 🎯 选一个你正在面对的人生决策")
     cols = st.columns(3)
     for i, sc in enumerate(SCENARIO_CATALOG):
         with cols[i]:
             if sc["enabled"]:
                 st.markdown(
                     f"""
-                    <div class="life-card" style="cursor:pointer;min-height:140px;border:1px solid #6366F1;">
+                    <div class="life-card" style="min-height:130px;border:1.5px solid #6366F1;">
                         <div style="font-size:2rem;">{sc['emoji']}</div>
-                        <div style="font-size:1.1rem;font-weight:700;margin-top:8px;">{sc['name']}</div>
-                        <div style="font-size:0.85rem;color:#94A3B8;margin-top:6px;font-family:'Noto Serif SC',serif;">{sc['desc']}</div>
-                        <div style="font-size:0.7rem;color:#A5B4FC;margin-top:10px;letter-spacing:0.1em;">✓ AVAILABLE</div>
+                        <div style="font-size:1.05rem;font-weight:700;margin-top:8px;">{sc['name']}</div>
+                        <div style="font-size:0.82rem;color:#94A3B8;margin-top:6px;font-family:'Noto Serif SC',serif;">{sc['desc']}</div>
+                        <div style="font-size:0.68rem;color:#A5B4FC;margin-top:10px;letter-spacing:0.1em;">✓ AVAILABLE · 已解锁</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -106,11 +160,11 @@ def page_1_landing():
             else:
                 st.markdown(
                     f"""
-                    <div class="life-card" style="opacity:0.5;min-height:140px;border:1px dashed rgba(100,116,139,0.4);">
+                    <div class="life-card" style="opacity:0.55;min-height:130px;border:1px dashed rgba(100,116,139,0.4);">
                         <div style="font-size:2rem;">{sc['emoji']}</div>
-                        <div style="font-size:1.1rem;font-weight:700;margin-top:8px;color:#64748B;">{sc['name']}</div>
-                        <div style="font-size:0.85rem;color:#64748B;margin-top:6px;font-family:'Noto Serif SC',serif;">{sc['desc']}</div>
-                        <div style="font-size:0.7rem;color:#64748B;margin-top:10px;letter-spacing:0.1em;">⏳ COMING SOON</div>
+                        <div style="font-size:1.05rem;font-weight:700;margin-top:8px;color:#64748B;">{sc['name']}</div>
+                        <div style="font-size:0.82rem;color:#64748B;margin-top:6px;font-family:'Noto Serif SC',serif;">{sc['desc']}</div>
+                        <div style="font-size:0.68rem;color:#64748B;margin-top:10px;letter-spacing:0.1em;">⏳ COMING SOON · 敬请期待</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -118,58 +172,86 @@ def page_1_landing():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # 示例情境快速填充
+    st.markdown("#### 💡 不知道怎么写？点个相似情境，一键帮你填好")
+    ex_cols = st.columns(2)
+    for i, ex in enumerate(EXAMPLE_CASES):
+        col = ex_cols[i % 2]
+        with col:
+            if st.button(
+                f"{ex['title']}\n\n{ex['text'][:38]}…",
+                key=f"ex_{i}",
+                use_container_width=True,
+            ):
+                apply_example(i)
+                st.rerun()
+
+    if st.session_state.example_applied is not None:
+        applied_ex = EXAMPLE_CASES[st.session_state.example_applied]
+        st.success(f"已载入示例：{applied_ex['title']} · 你可以直接体验，也可以在下方修改")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # 决策输入
     st.markdown("#### 📝 描述你的处境")
     st.markdown(
-        '<div style="font-size:0.85rem;color:#94A3B8;margin-bottom:10px;">越具体越好 — 系统会从你的原话里抽取你在意的词，并在「平行时空」里引用它们</div>',
+        f'<div class="guide-strip">{FRIENDLY_COPY["input_tip"]}</div>',
         unsafe_allow_html=True,
     )
 
     raw_text = st.text_area(
-        label="",
+        label="描述你的处境",
         value=st.session_state.user_context.get("raw_text", ""),
-        height=140,
-        placeholder="例如：我29岁了，在国企干了6年，月薪1万5稳定但一眼望到头。我说过自由对我最重要，但父母希望我稳定…",
+        height=150,
+        placeholder=FRIENDLY_COPY["input_placeholder"],
         label_visibility="collapsed",
+        key="raw_text_input",
     )
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        age = st.number_input("🎂 年龄", 18, 70,
-                              int(st.session_state.user_context.get("age", 29)))
+        age = st.number_input("🎂 你的年龄", 18, 70,
+                              int(st.session_state.user_context.get("age", 29)),
+                              help="用于计算 5/10 年后的你几岁")
     with c2:
         savings = st.number_input("💰 存款（万元）", 0, 10000,
-                                  int(st.session_state.user_context.get("savings_wan", 40)))
+                                  int(st.session_state.user_context.get("savings_wan", 40)),
+                                  help="你的风险缓冲垫，影响约束求解")
     with c3:
-        est_success = st.slider("🎯 你主观估计的「转型成功率」",
+        est_success = st.slider("🎯 你主观估计的成功率",
                                 0.0, 1.0,
                                 float(st.session_state.user_context.get("user_estimated_success", 0.55)),
-                                0.05)
+                                0.05,
+                                help='系统会对照真实数据，检测你是否"过度自信"')
 
     # 硬约束
-    st.markdown("#### 🔒 你的硬约束（可多选）")
+    st.markdown("#### 🔒 你的硬约束（可多选，也可以不选）")
+    st.caption('所谓"硬约束"——是你绝对不能越过的底线。系统会标红违反约束的选项。')
     hard_constraints = st.multiselect(
-        label="",
+        label="硬约束",
         options=["不能降薪", "必须陪家人", "不能负债", "不能异地", "不能高强度加班"],
-        default=["必须陪家人"],
+        default=st.session_state.user_context.get("hard_constraints", ["必须陪家人"]),
         label_visibility="collapsed",
     )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # CTA
-    c_left, c_mid, c_right = st.columns([1, 1, 1])
+    c_left, c_mid, c_right = st.columns([1, 2, 1])
     with c_mid:
-        if st.button("🌌 开启平行时空之旅 →", use_container_width=True, key="cta_1"):
-            # 保存上下文
-            st.session_state.user_context.update({
-                "raw_text": raw_text,
-                "age": age,
-                "savings_wan": savings,
-                "user_estimated_success": est_success,
-                "hard_constraints": hard_constraints,
-            })
-            go_to_step(2)
+        if st.button("🌌 开启我的平行时空之旅 →", use_container_width=True, key="cta_1",
+                     type="primary"):
+            if len(raw_text.strip()) < 15:
+                st.warning("再多说一点吧（建议 50 字以上）—— 你说得越具体，未来就越像你。")
+            else:
+                st.session_state.user_context.update({
+                    "raw_text": raw_text,
+                    "age": age,
+                    "savings_wan": savings,
+                    "user_estimated_success": est_success,
+                    "hard_constraints": hard_constraints,
+                })
+                go_to_step(2)
 
 
 # ============================================================
@@ -179,11 +261,11 @@ def page_2_values():
     render_step_indicator(2)
 
     st.markdown('<div style="text-align:center;">', unsafe_allow_html=True)
-    st.markdown("## 价值观校准")
+    st.markdown("## ⚖️ 价值观校准")
     st.markdown(
-        '<div style="color:#94A3B8;font-family:\'Noto Serif SC\',serif;margin-bottom:20px;">'
-        '大多数决策痛苦不在于缺乏信息，而在于不清楚自己最在乎什么。<br>'
-        '用 7 个两两取舍，找到你真实的价值指纹。</div>',
+        f'<div style="color:#CBD5E1;font-family:\'Noto Serif SC\',serif;margin-bottom:8px;line-height:1.8;">'
+        f'{FRIENDLY_COPY["value_pk_hint"]}<br>'
+        f'<span style="font-size:0.85rem;color:#94A3B8;">（共 {len(VALUE_PK_PAIRS)} 题，约 90 秒完成）</span></div>',
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -201,8 +283,9 @@ def page_2_values():
         info_b = VALUE_DIMENSIONS[dim_b]
 
         st.markdown(
-            '<div style="text-align:center;font-size:1.1rem;color:#CBD5E1;margin-bottom:20px;">'
-            '如果只能保留一个，你选：</div>',
+            '<div style="text-align:center;font-size:1.15rem;color:#F8FAFC;margin-bottom:18px;'
+            'font-family:\'Noto Serif SC\',serif;">'
+            '如果这辈子只能保留一个，你选：</div>',
             unsafe_allow_html=True,
         )
 
@@ -218,7 +301,7 @@ def page_2_values():
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button(f"选择 {info_a['emoji']} {info_a['name']}",
+            if st.button(f"选 {info_a['emoji']} {info_a['name']}",
                          key=f"pk_{idx}_a", use_container_width=True):
                 st.session_state.pk_results[(dim_a, dim_b)] = dim_a
                 st.session_state.pk_index += 1
@@ -238,11 +321,18 @@ def page_2_values():
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button(f"选择 {info_b['emoji']} {info_b['name']}",
+            if st.button(f"选 {info_b['emoji']} {info_b['name']}",
                          key=f"pk_{idx}_b", use_container_width=True):
                 st.session_state.pk_results[(dim_a, dim_b)] = dim_b
                 st.session_state.pk_index += 1
                 st.rerun()
+
+        st.markdown(
+            '<div style="text-align:center;margin-top:16px;color:#64748B;font-size:12px;">'
+            '💡 凭直觉选，不要过度思考 · 这个测试没有"标准答案"</div>',
+            unsafe_allow_html=True,
+        )
+
     else:
         # PK 完成：展示价值雷达
         weights = quantify_values(st.session_state.pk_results)
@@ -254,6 +344,8 @@ def page_2_values():
             f'<div style="text-align:center;margin:10px 0 20px;">'
             f'<div style="color:#94A3B8;font-size:0.9rem;">你的价值指纹</div>'
             f'<div style="font-size:1.5rem;margin-top:6px;">主导维度 · {dom_info["emoji"]} <span class="highlight-gold">{dom_info["name"]}</span></div>'
+            f'<div style="color:#94A3B8;font-size:0.85rem;margin-top:4px;font-family:\'Noto Serif SC\',serif;">'
+            f'接下来的两条时间线，会围绕"{dom_info["name"]}"为你展开不同的结局</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -282,16 +374,21 @@ def page_2_values():
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             showlegend=False,
-            height=440,
-            margin=dict(l=50, r=50, t=30, b=30),
+            height=420,
+            margin=dict(l=40, r=40, t=20, b=20),
         )
         st.plotly_chart(fig, use_container_width=True)
 
         # CTA
-        c1, c2, c3 = st.columns([1, 1, 1])
+        c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
-            if st.button("⚡ 启动平行时空模拟器 →", use_container_width=True, key="cta_2"):
-                with st.spinner("🌌 正在模拟 1000 次平行人生..."):
+            if st.button("⚡ 启动平行时空模拟器 →", use_container_width=True, key="cta_2",
+                         type="primary"):
+                # 多步进度展示
+                progress_slot = st.empty()
+                with st.spinner("生成中..."):
+                    for step_text in FRIENDLY_COPY["loading_steps"]:
+                        progress_slot.info(step_text)
                     result = run_full_pipeline(
                         scenario_id="career_transition",
                         user_context=st.session_state.user_context,
@@ -299,6 +396,7 @@ def page_2_values():
                         hard_constraints=st.session_state.user_context.get("hard_constraints", []),
                     )
                     st.session_state.pipeline_result = result
+                progress_slot.empty()
                 go_to_step(3)
 
         if st.button("🔄 重新校准", key="reset_pk"):
@@ -524,10 +622,27 @@ def page_3_parallel_lives():
     render_step_indicator(3)
 
     # Hero
+    llm_badge = (
+        '<span class="llm-badge-on">🤖 DeepSeek AI 生成</span>'
+        if USE_LLM() else
+        '<span class="llm-badge-off">📝 模板模式</span>'
+    )
     st.markdown(
-        '<div class="hero-container" style="padding:1.5rem 1rem;">'
-        '<h1 style="font-size:2rem;">你的平行人生</h1>'
-        '<div class="hero-subtitle">基于 1000 次蒙特卡洛模拟 · 两个自己，同时在未来活着</div>'
+        f'<div class="hero-container" style="padding:1.2rem 1rem;">'
+        f'<h1 style="font-size:1.9rem;">你的平行人生</h1>'
+        f'<div class="hero-subtitle">基于 1000 次蒙特卡洛模拟 · 两个自己，同时在未来活着</div>'
+        f'<div style="margin-top:10px;">{llm_badge}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # 读图引导
+    st.markdown(
+        '<div class="reading-guide">'
+        '<b>📖 怎么看这一页？</b> '
+        '1️⃣ <b>命运分叉图</b>告诉你 1000 次模拟中每种结局的概率占比；'
+        '2️⃣ <b>双折线时间轴</b>展示你在两条路的收入和幸福感变化（阴影是波动区间）；'
+        '3️⃣ <b>下方故事</b>是基于概率和你原话生成的两个具象未来。'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -542,14 +657,19 @@ def page_3_parallel_lives():
     # 认知偏差检测弹窗
     if result["biases"]:
         st.markdown("#### ⚠️ 在继续阅读前，系统检测到你可能存在以下认知偏差")
+        st.caption("这不是批评——识别自己的偏差，是做出好决策的第一步。")
         for b in result["biases"]:
+            # XSS 防护
+            ev = html.escape(b.get('evidence', ''))
+            expl = html.escape(b.get('explanation', ''))
+            refl = html.escape(b.get('reflection_question', ''))
             st.markdown(
                 f"""
                 <div class="bias-alert">
-                    <div class="bias-title">{b['emoji']} 检测到【{b['name']}】</div>
-                    <div class="bias-evidence">📍 证据：{b['evidence']}</div>
-                    <div style="color:#FDE68A;font-size:13px;margin-top:10px;">💡 {b['explanation']}</div>
-                    <div class="bias-reflection">🔍 反思一问：{b['reflection_question']}</div>
+                    <div class="bias-title">{b['emoji']} 检测到【{html.escape(b['name'])}】</div>
+                    <div class="bias-evidence">📍 证据：{ev}</div>
+                    <div style="color:#FDE68A;font-size:13px;margin-top:10px;">💡 {expl}</div>
+                    <div class="bias-reflection">🔍 反思一问：{refl}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -560,8 +680,10 @@ def page_3_parallel_lives():
     # 双栏平行故事
     st.markdown("### 📖 两条时间线上的你")
     st.markdown(
-        '<div style="color:#94A3B8;font-family:\'Noto Serif SC\',serif;margin-bottom:20px;">'
-        '不是推荐你选哪个。只是让你看见——每一条路的尽头，有什么在等你。</div>',
+        '<div style="color:#CBD5E1;font-family:\'Noto Serif SC\',serif;margin-bottom:18px;line-height:1.8;">'
+        '这不是推荐。只是让你<b style="color:#FCD34D;">看见</b>——每一条路的尽头，有什么在等你。<br>'
+        '<span style="font-size:0.8rem;color:#94A3B8;">移动端建议：左右滑动查看，或竖屏从上往下阅读。</span>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -686,32 +808,71 @@ def page_3_parallel_lives():
 
 
 # ============================================================
-# Sidebar：全局上下文说明
+# Sidebar：配置 + 全局上下文
 # ============================================================
 with st.sidebar:
     st.markdown("## 🌌 平行人生")
-    st.markdown("*Life Decision OS*")
+    st.markdown("*Life Decision OS · v0.2*")
+    st.markdown("---")
+
+    # DeepSeek API Key 配置
+    st.markdown("### 🤖 AI 叙事引擎")
+    llm_on = llm_is_available()
+    if llm_on:
+        st.success("✅ 已接入 DeepSeek V3.2")
+    else:
+        st.info("💡 填入 DeepSeek Key 解锁 AI 叙事")
+
+    api_key_input = st.text_input(
+        "DeepSeek API Key",
+        value=st.session_state.get("deepseek_api_key", ""),
+        type="password",
+        placeholder="sk-xxxxxxxxxxxx",
+        help="注册即送 500 万 token · platform.deepseek.com",
+    )
+    if api_key_input != st.session_state.get("deepseek_api_key", ""):
+        st.session_state.deepseek_api_key = api_key_input
+        st.rerun()
+
+    with st.expander("📘 如何获取免费 Key（30秒）"):
+        st.markdown("""
+1. 访问 [platform.deepseek.com](https://platform.deepseek.com)
+2. 手机号注册，**送 500 万 token**（够用几百次）
+3. 左侧 "API Keys" → Create new key
+4. 复制 `sk-` 开头的 key 贴到上方
+        """)
+
+    if st.button("🧪 测试连接", use_container_width=True, disabled=not api_key_input):
+        with st.spinner("ping DeepSeek..."):
+            r = llm_ping()
+        if r.get("ok"):
+            st.success(f"✅ 连接成功 · 延迟 {r.get('latency_ms',0)}ms")
+        else:
+            st.error(f"❌ {r.get('error', '未知错误')}")
+
     st.markdown("---")
     st.markdown(f"""
-    **当前进度**  
-    Step {st.session_state.step} / 3
+**当前进度**  
+Step {st.session_state.step} / 3
 
-    **模式**  
-    {'🟢 LLM 模式' if USE_LLM else '🟡 模板模式（Demo）'}
+**叙事模式**  
+{'🤖 DeepSeek LLM' if llm_on else '📝 模板（Demo）'}
 
-    **核心引擎**
-    - 🔧 选项建模器
-    - ⚖️ 价值观量化器
-    - 🔒 约束求解器
-    - 🎲 蒙特卡洛模拟器
-    - ⏳ 时间折现器
-    - 🧠 认知偏差检测器
-    - 📖 平行叙事引擎
-
-    ---
-    *架构预留：*  
-    `USE_LLM=True` 即可切换到 GPT-4/Claude 实时生成个性化叙事
+**核心引擎**
+- 🔧 选项建模器
+- ⚖️ 价值观量化器
+- 🔒 约束求解器
+- 🎲 蒙特卡洛模拟器 (N=1000)
+- ⏳ 时间折现器 (γ=0.9)
+- 🧠 认知偏差检测器
+- 📖 平行叙事引擎
     """)
+
+    if st.button("🔁 完全重置", use_container_width=True):
+        for k in ["step", "pk_results", "pk_index", "pipeline_result",
+                  "user_context", "example_applied"]:
+            st.session_state.pop(k, None)
+        st.rerun()
 
 
 # ============================================================
