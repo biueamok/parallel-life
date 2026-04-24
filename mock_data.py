@@ -1,0 +1,226 @@
+"""
+平行人生 · Mock 数据与场景参数
+- 职业转型场景（首发）
+- 价值维度定义
+- 认知偏差规则
+- 用户原词抽取词库
+"""
+
+# ============================================================
+# 一、价值维度定义（6 维）
+# ============================================================
+VALUE_DIMENSIONS = {
+    "wealth":      {"name": "财富", "emoji": "💰", "desc": "金钱、资产、财务自由"},
+    "freedom":     {"name": "自由", "emoji": "🕊️", "desc": "时间自主、不被束缚"},
+    "achievement": {"name": "成就", "emoji": "🏆", "desc": "社会认可、事业成功"},
+    "relation":    {"name": "关系", "emoji": "❤️", "desc": "家人、朋友、陪伴"},
+    "health":      {"name": "健康", "emoji": "🌿", "desc": "身体、心理、平衡"},
+    "meaning":     {"name": "意义", "emoji": "✨", "desc": "使命感、影响世界"},
+}
+
+# ============================================================
+# 二、价值观两两 PK 题库（强制取舍）
+# ============================================================
+VALUE_PK_PAIRS = [
+    ("wealth", "freedom"),
+    ("wealth", "relation"),
+    ("freedom", "achievement"),
+    ("achievement", "health"),
+    ("relation", "achievement"),
+    ("meaning", "wealth"),
+    ("health", "freedom"),
+]
+
+# ============================================================
+# 三、职业转型场景：两个选项的完整参数
+# ============================================================
+SCENARIOS = {
+    "career_transition": {
+        "id": "career_transition",
+        "name": "职业转型",
+        "tagline": "留在体制内，还是出去闯一闯？",
+        "default_context": {
+            "age": 29,
+            "savings_wan": 40,          # 存款万元
+            "family_burden": "有3岁女儿，父母身体尚好",
+            "current_role": "国企工程师，副科待遇",
+            "raw_text": "我29岁了，在国企干了6年，月薪1万5稳定但一眼望到头。我说过自由对我最重要，但父母希望我稳定，女儿刚3岁需要陪伴。老王去年出来创业AI方向，看着朋友圈感觉他的世界在变大，我的在变小。该不该也出去闯一闯？"
+        },
+        "options": {
+            "stay_soe": {
+                "id": "stay_soe",
+                "name": "留在国企",
+                "short_desc": "稳定晋升路径，预计10年后升至正处级",
+                "color": "#0EA5E9",
+                "emoji": "🏛️",
+                "params": {
+                    "income_mu": 18.0,          # 年薪万元（初始）
+                    "income_sigma": 0.15,       # 波动率
+                    "growth_rate": 0.06,        # 年复合增长
+                    "income_ceiling": 45.0,     # 天花板
+                    "risk_factor": 0.1,         # 失业/重大打击概率
+                    "happiness_base": 0.62,
+                    "autonomy_score": 0.3,
+                    "achievement_ceiling": 0.55,
+                    "failure_prob": 0.05,
+                    "family_time_score": 0.85,
+                    "meaning_score": 0.45,
+                },
+                # 蒙特卡洛结局分叉概率（顺境/常态/逆境）
+                "outcome_probs": {"optimistic": 0.22, "baseline": 0.62, "pessimistic": 0.16},
+            },
+            "entrepreneur": {
+                "id": "entrepreneur",
+                "name": "出去创业",
+                "short_desc": "做 AI Agent 方向，高方差高天花板",
+                "color": "#F97316",
+                "emoji": "🚀",
+                "params": {
+                    "income_mu": 15.0,
+                    "income_sigma": 0.55,
+                    "growth_rate": 0.18,
+                    "income_ceiling": 500.0,
+                    "risk_factor": 0.55,
+                    "happiness_base": 0.58,
+                    "autonomy_score": 0.88,
+                    "achievement_ceiling": 0.95,
+                    "failure_prob": 0.42,
+                    "family_time_score": 0.35,
+                    "meaning_score": 0.82,
+                },
+                "outcome_probs": {"optimistic": 0.23, "baseline": 0.35, "pessimistic": 0.42},
+            },
+        },
+        # Sankey 流量矩阵（起点 → 路径 → 结局）
+        "sankey_nodes": [
+            "当前的你（29岁）",        # 0
+            "留国企路径",              # 1
+            "创业路径",                # 2
+            "国企·顺境 升副处",        # 3
+            "国企·平淡 原地踏步",      # 4
+            "国企·逆境 提前退休",      # 5
+            "创业·成功 拿到B轮",       # 6
+            "创业·常态 小而美",        # 7
+            "创业·失败 重回就业",      # 8
+        ],
+        "sankey_flows": [
+            # (source, target, value)
+            (0, 1, 50), (0, 2, 50),
+            (1, 3, 22), (1, 4, 62), (1, 5, 16),
+            (2, 6, 23), (2, 7, 35), (2, 8, 42),
+        ],
+    }
+}
+
+# ============================================================
+# 四、认知偏差检测规则
+# ============================================================
+BIAS_PATTERNS = {
+    "status_quo": {
+        "name": "现状偏差",
+        "emoji": "🔒",
+        "trigger_keywords": ["稳定", "现在挺好", "不想折腾", "习惯了", "反正"],
+        "trigger_check": lambda ctx: (
+            ctx.get("value_weights", {}).get("wealth", 0) > 0.0 and
+            (ctx.get("stability_weight", 0) > 0.28 or any(kw in ctx.get("raw_text", "") for kw in ["稳定", "习惯"]))
+        ),
+        "explanation": "现状偏差（Status Quo Bias）是人类倾向于维持当前状态的思维惯性，即使改变可能带来更好的结果。这源于大脑对「失去」的敏感度是「获得」的2倍。",
+        "reflection_question": "如果你今天不是已经在现在这条路上，而是重新从零选择，你还会选它吗？",
+    },
+    "sunk_cost": {
+        "name": "沉没成本谬误",
+        "emoji": "⚓",
+        "trigger_keywords": ["已经", "都干了", "投入了", "花了", "这么多年", "年了"],
+        "trigger_check": lambda ctx: any(kw in ctx.get("raw_text", "") for kw in ["已经", "年了", "这么久"]),
+        "explanation": "沉没成本谬误是指因为过去已投入而不愿放弃当前方向的思维错误。过去的时间不会因为你今天的选择而改变，真正的问题是：未来的时间，哪个选择更好？",
+        "reflection_question": "如果你过去6年什么都没做，今天的你还会选择继续走这条路吗？",
+    },
+    "loss_aversion": {
+        "name": "损失厌恶",
+        "emoji": "📉",
+        "trigger_keywords": ["失去", "损失", "降薪", "没有收入", "万一"],
+        "trigger_check": lambda ctx: ctx.get("value_weights", {}).get("wealth", 0) > 0.28,
+        "explanation": "损失厌恶是指人们对同等金额的损失感受，强度约为获得的 2.25 倍。这让我们在决策时系统性地高估风险、低估机会。",
+        "reflection_question": "你列出了转型会失去的 5 件事，现在也请列出可能获得的 5 件事——你真的对称地看过两边吗？",
+    },
+    "availability": {
+        "name": "可得性启发",
+        "emoji": "👁️",
+        "trigger_keywords": ["朋友", "同学", "老王", "身边", "听说", "我见过", "我认识的"],
+        "trigger_check": lambda ctx: any(kw in ctx.get("raw_text", "") for kw in ["朋友", "同学", "老王", "身边", "认识"]),
+        "explanation": "可得性启发是指用「容易想起的案例」代替「真实概率」。朋友圈的成功故事被算法放大，失败者沉默离场——你看到的从来不是全貌。",
+        "reflection_question": "你身边那个创业成功的人只是样本。同批次出发的100个人里，现在在哪里？",
+    },
+    "anchoring": {
+        "name": "锚定效应",
+        "emoji": "⚓",
+        "trigger_keywords": ["40万", "百万", "千万", "财务自由", "一个亿"],
+        "trigger_check": lambda ctx: ctx.get("reference_number") is not None,
+        "explanation": "锚定效应是指初次接触的数字会成为后续判断的参照点，即使这个参照点并不合理。",
+        "reflection_question": "你脑中那个「成功」的数字是从哪里来的？它是真实的中位数，还是被幸存者故事污染的样本？",
+    },
+    "overconfidence": {
+        "name": "过度自信",
+        "emoji": "🎯",
+        "trigger_keywords": ["肯定", "一定能", "绝对", "我比", "我会比"],
+        "trigger_check": lambda ctx: (
+            ctx.get("user_estimated_success", 0) > 0.5 or
+            any(kw in ctx.get("raw_text", "") for kw in ["肯定", "一定"])
+        ),
+        "explanation": "90% 的创业者认为自己会成功，但实际创业 5 年存活率约为 18%。「我会是那 18%」这种想法本身就是过度自信的信号。",
+        "reflection_question": "如果模型告诉你成功率只有 18%，你还会做同样的选择吗？还是你真的相信自己比其他 82% 的人都更聪明？",
+    },
+}
+
+# ============================================================
+# 五、用户原词抽取关键词库
+# ============================================================
+KEYWORD_BANK = {
+    # 价值类
+    "freedom":     ["自由", "自主", "不被束缚", "独立", "自己说了算"],
+    "wealth":      ["钱", "收入", "财富", "赚钱", "经济", "工资", "薪水"],
+    "stability":   ["稳定", "安稳", "踏实", "保障", "靠谱"],
+    # 注意：孩子类词汇放最前，叙事中优先使用（更具象化）
+    "relation":    ["女儿", "儿子", "孩子", "宝宝", "老婆", "老公", "妻子", "丈夫", "爱人", "父母", "爸妈", "家人", "陪伴"],
+    "achievement": ["成就", "成功", "成长", "发展", "事业"],
+    "meaning":     ["意义", "价值", "使命", "理想", "热爱"],
+    # 情绪类
+    "anxiety":     ["焦虑", "怕", "担心", "怕失败", "不安"],
+    "regret":      ["后悔", "遗憾", "要是当初"],
+    "ambition":    ["想闯", "想试", "不甘心", "不想平庸"],
+}
+
+# 中文姓氏词（用于叙事中的人物指代）
+COMMON_NAMES = ["老王", "老李", "老张", "同事小陈", "朋友阿杰"]
+
+# ============================================================
+# 六、默认种子上下文（Demo 可演示性生命线：不填任何东西就能跑）
+# ============================================================
+DEFAULT_SEED_CONTEXT = {
+    "age": 29,
+    "savings_wan": 40,
+    "raw_text": SCENARIOS["career_transition"]["default_context"]["raw_text"],
+    "reference_number": 40,  # 老王年薪40万（锚定）
+    "user_estimated_success": 0.55,  # 过度自信
+    "value_weights": {
+        "wealth": 0.18,
+        "freedom": 0.28,
+        "achievement": 0.15,
+        "relation": 0.22,
+        "health": 0.10,
+        "meaning": 0.07,
+    },
+    "stability_weight": 0.30,
+}
+
+# ============================================================
+# 七、场景列表（Hero 区展示，后两个占位 Coming Soon）
+# ============================================================
+SCENARIO_CATALOG = [
+    {"id": "career_transition", "name": "职业转型", "emoji": "💼", "enabled": True,
+     "desc": "留在现在的岗位，还是出去闯？"},
+    {"id": "relocation", "name": "城市迁居", "emoji": "🏙️", "enabled": False,
+     "desc": "留在一线卷，还是回小城生活？"},
+    {"id": "postgrad", "name": "升学抉择", "emoji": "🎓", "enabled": False,
+     "desc": "考研、留学、还是直接工作？"},
+]
