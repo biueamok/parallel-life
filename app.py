@@ -90,157 +90,108 @@ def apply_example(example_idx: int):
 
 
 # ============================================================
-# 页面 1：Landing + 决策输入
+# 页面 1：极简 Landing（标题 + 1 个参考案例 + 输入框）
 # ============================================================
 def page_1_landing():
     render_step_indicator(1)
 
-    # Hero
+    # —— Hero（保留，但更轻）
     st.markdown(
         f"""
-        <div class="hero-container">
-            <h1>平行人生</h1>
-            <div class="hero-subtitle">{FRIENDLY_COPY['hero_tagline_zh']}</div>
-            <div class="hero-tagline">LIFE DECISION OS · MONTE CARLO × BEHAVIORAL ECONOMICS</div>
+        <div class="hero-container" style="padding:20px 0 12px;">
+            <h1 style="margin-bottom:8px;">平行人生</h1>
+            <div class="hero-subtitle" style="margin-bottom:4px;">{FRIENDLY_COPY['hero_tagline_zh']}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # 一分钟说明书
-    st.markdown("#### ✨ 30 秒看懂这个产品")
-    steps_html = "".join(
+    # —— 一个参考案例（紧凑、可切换下一个）
+    if "ref_idx" not in st.session_state:
+        st.session_state.ref_idx = 0
+    ref_idx = st.session_state.ref_idx % len(EXAMPLE_CASES)
+    ref = EXAMPLE_CASES[ref_idx]
+
+    ref_text_esc = html.escape(ref["text"])
+    ref_title_esc = html.escape(ref["title"])
+    st.markdown(
         f"""
-        <div class="life-card" style="margin:6px 0;padding:14px 18px;border-left:3px solid #6366F1;">
-            <div style="display:flex;align-items:center;gap:14px;">
-                <div style="font-size:2rem;">{emoji}</div>
-                <div style="flex:1;">
-                    <div style="color:#A5B4FC;font-weight:700;font-size:0.85rem;">
-                        {step} · <span style="color:#FCD34D;">约 {dur}</span>
-                    </div>
-                    <div style="color:#E2E8F0;font-family:'Noto Serif SC',serif;margin-top:2px;font-size:14px;">
-                        {desc}
-                    </div>
-                </div>
+        <div style="
+            margin: 4px 0 10px;
+            padding: 16px 20px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(236,72,153,0.05));
+            border: 1px solid rgba(99,102,241,0.25);
+            border-left: 3px solid #A78BFA;
+            border-radius: 12px;
+        ">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="color:#A5B4FC;font-size:0.78rem;letter-spacing:0.15em;">参考案例 · REFERENCE</span>
+                <span style="color:#C4B5FD;font-weight:700;font-size:0.92rem;">{ref_title_esc}</span>
+            </div>
+            <div style="color:#CBD5E1;font-family:'Noto Serif SC',serif;font-size:14.5px;line-height:1.75;">
+                「{ref_text_esc}」
             </div>
         </div>
-        """
-        for (emoji, step, dur, desc) in FRIENDLY_COPY["one_min_explainer"]
-    )
-    st.markdown(steps_html, unsafe_allow_html=True)
-
-    # 为什么值得信任
-    with st.expander("🧭 这个产品靠什么给出结论？（点击展开）", expanded=False):
-        for line in FRIENDLY_COPY["why_it_works"]:
-            st.markdown(f"- {line}")
-
-    # 免责 Banner
-    st.markdown(
-        '<div class="disclaimer-banner">🔒 本系统输出为概率分布而非预言；不存储、不训练、不传递你的任何输入</div>',
+        """,
         unsafe_allow_html=True,
     )
 
-    # 场景选择
-    st.markdown("#### 🎯 选一个你正在面对的人生决策")
-    cols = st.columns(3)
-    for i, sc in enumerate(SCENARIO_CATALOG):
-        with cols[i]:
-            if sc["enabled"]:
-                st.markdown(
-                    f"""
-                    <div class="life-card" style="min-height:130px;border:1.5px solid #6366F1;">
-                        <div style="font-size:2rem;">{sc['emoji']}</div>
-                        <div style="font-size:1.05rem;font-weight:700;margin-top:8px;">{sc['name']}</div>
-                        <div style="font-size:0.82rem;color:#94A3B8;margin-top:6px;font-family:'Noto Serif SC',serif;">{sc['desc']}</div>
-                        <div style="font-size:0.68rem;color:#A5B4FC;margin-top:10px;letter-spacing:0.1em;">✓ AVAILABLE · 已解锁</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f"""
-                    <div class="life-card" style="opacity:0.55;min-height:130px;border:1px dashed rgba(100,116,139,0.4);">
-                        <div style="font-size:2rem;">{sc['emoji']}</div>
-                        <div style="font-size:1.05rem;font-weight:700;margin-top:8px;color:#64748B;">{sc['name']}</div>
-                        <div style="font-size:0.82rem;color:#64748B;margin-top:6px;font-family:'Noto Serif SC',serif;">{sc['desc']}</div>
-                        <div style="font-size:0.68rem;color:#64748B;margin-top:10px;letter-spacing:0.1em;">⏳ COMING SOON · 敬请期待</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+    ref_col1, ref_col2 = st.columns([1, 1])
+    with ref_col1:
+        if st.button("📌 就用这个案例试一下", use_container_width=True, key="ref_use"):
+            apply_example(ref_idx)
+            st.rerun()
+    with ref_col2:
+        if st.button("🔀 换一个案例", use_container_width=True, key="ref_next"):
+            st.session_state.ref_idx = (ref_idx + 1) % len(EXAMPLE_CASES)
+            st.rerun()
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # 示例情境快速填充
-    st.markdown("#### 💡 不知道怎么写？点个相似情境，一键帮你填好")
-    ex_cols = st.columns(2)
-    for i, ex in enumerate(EXAMPLE_CASES):
-        col = ex_cols[i % 2]
-        with col:
-            if st.button(
-                f"{ex['title']}\n\n{ex['text'][:38]}…",
-                key=f"ex_{i}",
-                use_container_width=True,
-            ):
-                apply_example(i)
-                st.rerun()
-
-    if st.session_state.example_applied is not None:
-        applied_ex = EXAMPLE_CASES[st.session_state.example_applied]
-        st.success(f"已载入示例：{applied_ex['title']} · 你可以直接体验，也可以在下方修改")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # 决策输入
-    st.markdown("#### 📝 描述你的处境")
-    st.markdown(
-        f'<div class="guide-strip">{FRIENDLY_COPY["input_tip"]}</div>',
-        unsafe_allow_html=True,
-    )
+    # —— 输入框（核心，占主舞台）
+    st.markdown("<div style='margin-top:18px;'></div>", unsafe_allow_html=True)
 
     raw_text = st.text_area(
-        label="描述你的处境",
+        label="描述你正在面对的决策",
         value=st.session_state.user_context.get("raw_text", ""),
-        height=150,
+        height=180,
         placeholder=FRIENDLY_COPY["input_placeholder"],
-        label_visibility="collapsed",
+        label_visibility="visible",
         key="raw_text_input",
+        help="说得越具体越好 —— 你原话里的关键词（如「女儿」「房贷」「自由」）会出现在你的平行时空故事中",
     )
 
+    # —— 基础参数（紧凑一行，可折叠进阶）
     c1, c2, c3 = st.columns(3)
     with c1:
-        age = st.number_input("🎂 你的年龄", 18, 70,
-                              int(st.session_state.user_context.get("age", 29)),
-                              help="用于计算 5/10 年后的你几岁")
+        age = st.number_input(
+            "🎂 年龄", 18, 70,
+            int(st.session_state.user_context.get("age", 29)),
+        )
     with c2:
-        savings = st.number_input("💰 存款（万元）", 0, 10000,
-                                  int(st.session_state.user_context.get("savings_wan", 40)),
-                                  help="你的风险缓冲垫，影响约束求解")
+        savings = st.number_input(
+            "💰 存款（万元）", 0, 10000,
+            int(st.session_state.user_context.get("savings_wan", 40)),
+        )
     with c3:
-        est_success = st.slider("🎯 你主观估计的成功率",
-                                0.0, 1.0,
-                                float(st.session_state.user_context.get("user_estimated_success", 0.55)),
-                                0.05,
-                                help='系统会对照真实数据，检测你是否"过度自信"')
+        est_success = st.slider(
+            "🎯 你认为的成功率", 0.0, 1.0,
+            float(st.session_state.user_context.get("user_estimated_success", 0.55)),
+            0.05,
+        )
 
-    # 硬约束
-    st.markdown("#### 🔒 你的硬约束（可多选，也可以不选）")
-    st.caption('所谓"硬约束"——是你绝对不能越过的底线。系统会标红违反约束的选项。')
-    hard_constraints = st.multiselect(
-        label="硬约束",
-        options=["不能降薪", "必须陪家人", "不能负债", "不能异地", "不能高强度加班"],
-        default=st.session_state.user_context.get("hard_constraints", ["必须陪家人"]),
-        label_visibility="collapsed",
-    )
+    with st.expander("🔒 进阶：设置你的硬约束（可跳过）", expanded=False):
+        hard_constraints = st.multiselect(
+            label="硬约束",
+            options=["不能降薪", "必须陪家人", "不能负债", "不能异地", "不能高强度加班"],
+            default=st.session_state.user_context.get("hard_constraints", []),
+            label_visibility="collapsed",
+        )
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
 
-    # CTA
+    # —— CTA
     c_left, c_mid, c_right = st.columns([1, 2, 1])
     with c_mid:
-        if st.button("🌌 开启我的平行时空之旅 →", use_container_width=True, key="cta_1",
-                     type="primary"):
+        if st.button("🌌 开启我的平行时空 →", use_container_width=True, key="cta_1", type="primary"):
             if len(raw_text.strip()) < 15:
                 st.warning("再多说一点吧（建议 50 字以上）—— 你说得越具体，未来就越像你。")
             else:
@@ -252,6 +203,16 @@ def page_1_landing():
                     "hard_constraints": hard_constraints,
                 })
                 go_to_step(2)
+
+    # —— 极小脚注（替代原本的 3 块内容）
+    st.markdown(
+        """
+        <div style="text-align:center;margin-top:18px;color:#64748B;font-size:12px;letter-spacing:0.04em;">
+            🔒 你的输入只在本次会话使用，不存储 · 不训练 · 不传递
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ============================================================
